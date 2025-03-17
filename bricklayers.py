@@ -1231,7 +1231,7 @@ class BrickLayersProcessor:
         # parents_merged = []
 
         parents_merged = BrickLayersProcessor.build_loop_tree_bidirectional(nodes)
-        logger.info(brick_dump("parents_merged",parents_merged))
+        #logger.info(brick_dump("parents_merged",parents_merged))
         # # Process parents_direct, merging both steps 2 & 3
         # for parent in parents_direct:
         #     if parent.kids:  # If has kids: it's a normal loop with nested loops
@@ -1313,12 +1313,10 @@ class BrickLayersProcessor:
             line3 = nodes[node_index].looplines[2].current
             x1 = line2.x-line1.x
             y1 = line2.y-line1.y
-            x2 = line1.y-line3.y
+            x2 = line3.y-line1.y
             y2 = line1.x-line3.x
-            x2=-x2
-            #l = math.sqrt((x1**2+y1**2)*(x2**2+y2**2))
             dot= (x1*x2+y1*y2)
-            logger.info(f"dot={dot}, \n\t{line1}\n\t{line2}\n\t{line3}")
+            #logger.info(f"dot={dot}, \n\t{line1}\n\t{line2}\n\t{line3}")
             last_h=nodes[node_index].around_hole=dot<=0
         nodes[-1].around_hole=last_h
         return nodes
@@ -1326,8 +1324,9 @@ class BrickLayersProcessor:
 
     @staticmethod
     def build_loop_tree_bidirectional(nodes, hole=False):
-        nodes=BrickLayersProcessor.calculate_hole_direction(nodes)
         """Builds the parent-child tree structure based on bounding box containment."""
+        nodes=BrickLayersProcessor.calculate_hole_direction(nodes)
+
         # Create a node, to act as the root of the tree
         root = LoopNode(-1,None,[])
         for node_index, node in enumerate(nodes):
