@@ -1218,31 +1218,33 @@ class BrickLayersProcessor:
             nodes.append(LoopNode(loop_index, bb, ploop))
 
         # Clone the Nodes, with their computed Bounding Boxes, for detection in reverse:
-        nodes_reverse = [LoopNode(n.order, n.boundingbox, n.looplines) for n in nodes]
-        nodes_reverse.reverse()
+        # nodes_reverse = [LoopNode(n.order, n.boundingbox, n.looplines) for n in nodes]
+        # nodes_reverse.reverse()
 
         # Run the tree-building function in both directions
-        parents_direct  = BrickLayersProcessor.build_loop_tree(nodes)
-        parents_reverse = BrickLayersProcessor.build_loop_tree(nodes_reverse, True)
+        # parents_direct  = BrickLayersProcessor.build_loop_tree(nodes)
+        # parents_reverse = BrickLayersProcessor.build_loop_tree(nodes_reverse, True)
 
         #print(brick_dump("parents_direct",  parents_direct))
         #print(brick_dump("parents_reverse", parents_reverse))
 
-        parents_merged = []
+        # parents_merged = []
 
-        # Process parents_direct, merging both steps 2 & 3
-        for parent in parents_direct:
-            if parent.kids:  # If has kids: it's a normal loop with nested loops
-                parents_merged.append(parent)
-            else:
-                # Find the matching reverse parent
-                match = next((rev_parent for rev_parent in parents_reverse if rev_parent.order == parent.order), None)
+        parents_merged = BrickLayersProcessor.build_loop_tree_bidirectional(nodes)
+        logger.info(brick_dump("parents_merged",parents_merged))
+        # # Process parents_direct, merging both steps 2 & 3
+        # for parent in parents_direct:
+        #     if parent.kids:  # If has kids: it's a normal loop with nested loops
+        #         parents_merged.append(parent)
+        #     else:
+        #         # Find the matching reverse parent
+        #         match = next((rev_parent for rev_parent in parents_reverse if rev_parent.order == parent.order), None)
                 
-                if match:
-                    if match.kids:  # Reverse has kids? It's a loop with nested loops around a hole
-                        parents_merged.append(match)
-                    else:  # Fully isolated loop:
-                        parents_merged.append(parent)
+        #         if match:
+        #             if match.kids:  # Reverse has kids? It's a loop with nested loops around a hole
+        #                 parents_merged.append(match)
+        #             else:  # Fully isolated loop:
+        #                 parents_merged.append(parent)
 
         LoopNode.concentric = 0 # Resetting the contentric counter of loops that are tightly nested
         for parent in parents_merged:
@@ -1252,8 +1254,8 @@ class BrickLayersProcessor:
         #print(brick_dump("parents_merged", parents_merged, {"gcode"}))
 
         # Clear the Node Trees
-        del parents_direct
-        del parents_reverse
+        #del parents_direct
+        #del parents_reverse
         del parents_merged
 
         return moving_order
@@ -1302,6 +1304,60 @@ class BrickLayersProcessor:
 
         return parents  # Returning this for debugging or later use
 
+    @staticmethod
+    def calculate_hole_direction(nodes:list):
+        last_h=False
+        for node_index in range(0,len(nodes)-1):
+            line1 = nodes[node_index].looplines[1].current
+            line2 = nodes[node_index+1].looplines[1].current
+            line3 = nodes[node_index].looplines[2].current
+            x1 = line2.x-line1.x
+            y1 = line2.y-line1.y
+            x2 = line1.y-line3.y
+            y2 = line1.x-line3.x
+            x2=-x2
+            #l = math.sqrt((x1**2+y1**2)*(x2**2+y2**2))
+            dot= (x1*x2+y1*y2)
+            logger.info(f"dot={dot}, \n\t{line1}\n\t{line2}\n\t{line3}")
+            last_h=nodes[node_index].around_hole=dot<=0
+        nodes[-1].around_hole=last_h
+        return nodes
+        
+
+    @staticmethod
+    def build_loop_tree_bidirectional(nodes, hole=False):
+        nodes=BrickLayersProcessor.calculate_hole_direction(nodes)
+        """Builds the parent-child tree structure based on bounding box containment."""
+        # Create a node, to act as the root of the tree
+        root = LoopNode(-1,None,[])
+        for node_index, node in enumerate(nodes):
+            cur_parent=root
+            completed=False            
+            while not completed:
+                steal_kids=[]
+                grandchild=False
+                for kid in cur_parent.kids:
+                    if node.boundingbox.contains(kid.boundingbox):
+                        steal_kids.append(kid)
+                    elif kid.boundingbox.contains(node.boundingbox):
+                        cur_parent=kid
+                        grandchild=True
+                        break
+                #move all known contained nodes into this node
+                for kid in steal_kids:
+                    cur_parent.kids.remove(kid)
+                    node.kids.append(kid)
+                if grandchild:
+                    #we know this only because of input order
+                    #think of better way to work out holes
+                    #node.around_hole=True
+                    pass
+                else:
+                    #cur_parent.around_hole=node.around_hole
+                    cur_parent.kids.append(node)
+                    completed=True
+                    
+        return root.kids
 
 
     def generate_deffered_perimeters(self, myline, deffered, extrusion_multiplier, extrusion_multiplier_preview, feature, simulator, buffer):
@@ -1436,7 +1492,8 @@ class BrickLayersProcessor:
             # Insert a safe point to continue this line:
             # TODO: Should retract before? Create a custom retraction if the next line starts further away from the end of the last deffered perimeter
             buffer.append(from_gcode(f"G1 X{myline.previous.x} Y{myline.previous.y} F{int(simulator.travel_speed)} ; BRICK: Calculated to next coordinate\n"))
-            buffer.append(from_gcode(f"G1 F{int(deffered_line.previous.f)} ; BRICK: Feed Rate\n")) # Simple Feed
+            if "deffered_line" in locals():
+                buffer.append(from_gcode(f"G1 F{int(deffered_line.previous.f)} ; BRICK: Feed Rate\n")) # Simple Feed
 
             # TODO: Eliminate double-travels, passing the "buffer_lines" through optimization... EDIT: maybe it is not really necessary...
 
