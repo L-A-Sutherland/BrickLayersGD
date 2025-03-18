@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-__version__ = "v0.2.0-17-g865fe50"  # Updated by GitHub Actions
+__version__ = "v0.2.0-28-gdac576a"  # Updated by GitHub Actions
 
 # Brick Layers by Geek Detour
 # Interlocking Layers Post-Processing Script for PrusaSlicer, OrcaSlicer, and BambuStudio
@@ -1676,7 +1676,8 @@ class BrickLayersProcessor:
 
                 else: # When it layers to be ignored:
                     # This Perimiter is part of a Layer that should NOT be modified. Just append:
-                    buffer_lines.append(myline)
+                    if myline is not None:
+                        buffer_lines.append(myline)
 
 
 
@@ -1842,9 +1843,9 @@ class BrickLayersProcessor:
                 #outfile.writelines([gcodeline.to_gcode() for gcodeline in buffer_lines]) #OLD WAY
                 # Generator way:
                 if not self.yield_objects:
-                    yield from (gcodeline.to_gcode() for gcodeline in buffer_lines)
+                    yield from (gcodeline.to_gcode() for gcodeline in buffer_lines if gcodeline is not None)
                 else:
-                    yield from buffer_lines
+                    yield from (buffer_line for buffer_line in buffer_lines if buffer_line is not None)
                 buffer_lines.clear()
 
                 # Clear the structure for deffered perimeters, ready for the next Layer:
@@ -1858,7 +1859,8 @@ class BrickLayersProcessor:
             #
             if not feature.internal_perimeter:
                 # Adds all the normal lines to the buffer:
-                buffer_lines.append(myline)
+                if myline is not None:
+                    buffer_lines.append(myline)
 
             # Exception for pretty visualization on PrusaSlicer and OrcaSlicer preview:
             # Forces a "Width" after an External Perimeter begins, to make them look like they actually ARE.
@@ -2098,7 +2100,8 @@ Argument names are case-insensitive, so:
         is_uploading = any(tmp in normalized_input_file for tmp in [
             "/tmp/",
             "/temp/",
-            "/appdata/local/temp/"
+            "/appdata/local/temp",
+            "/temp."
         ])
 
         # Convert -ignoreLayersFromTo list into tuples of 2
@@ -2218,7 +2221,7 @@ Argument names are case-insensitive, so:
         # print(final_output_file)
 
         # Open the input and output files using Generators:
-        with open(input_file, 'r', encoding="ascii", newline="") as infile, open(final_output_file, 'w') as outfile:
+        with open(input_file, "r", encoding="utf-8", errors="replace", newline="") as infile, open(final_output_file, "w", encoding="utf-8", newline="\n") as outfile:
             # Pass the file generator (line-by-line) to process_gcode
             gcode_stream = (line for line in infile)  # Efficient generator
 
@@ -2227,7 +2230,8 @@ Argument names are case-insensitive, so:
 
             # Write processed G-code to the output file
             for processed_line in processed_gcode:
-                outfile.write(processed_line)
+                if processed_line is not None: # TODO: why does some people get a None line?! 
+                    outfile.write(processed_line)
     
 
         # If using a temporary file, replace the original input_file
@@ -2240,7 +2244,7 @@ Argument names are case-insensitive, so:
                     break  # If successful, exit the loop
                 except Exception:
                     try:
-                        with open(final_output_file, "r", encoding="ascii", newline="") as temp_f, open(input_file, "w", encoding="ascii", newline="") as input_f:
+                        with open(final_output_file, "r", encoding="utf-8", newline="") as temp_f, open(input_file, "w", encoding="utf-8", newline="\n") as input_f:
                             input_f.write(temp_f.read())
                         break  # If successful, exit the loop
                     except Exception:
