@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-__version__ = "v0.2.0-28-gdac576a"  # Updated by GitHub Actions
+__version__ = "v0.2.0-53-g757d5a0"  # Updated by GitHub Actions
 
 # Brick Layers by Geek Detour
 # Interlocking Layers Post-Processing Script for PrusaSlicer, OrcaSlicer, and BambuStudio
@@ -1119,7 +1119,7 @@ class BrickLayersProcessor:
                 gcodes.append(from_gcode(f"G1 Z{z:.2f} ; BRICK: Target Position\n"))
             gcodes.append(from_gcode(f"G1 E{simulator.retraction_length:.2f} F{int(simulator.retraction_speed)} ; BRICK: Urnetract\n"))
 
-        else:
+        elif simulator.retraction_speed>0 and simulator.wipe_speed>0:
             # wipe with travel:
             gcodes.append(from_gcode(f"G1 E-{stopped_pull:.2f} F{int(simulator.retraction_speed)} ; BRICK: Retraction \n"))
             gcodes.append(from_gcode(feature.const_wipe_start))
@@ -1131,7 +1131,11 @@ class BrickLayersProcessor:
             if z is not None:
                 gcodes.append(from_gcode(f"G1 Z{z:.2f} ; BRICK: Target Position\n"))
             gcodes.append(from_gcode(f"G1 E{simulator.retraction_length:.2f} F{int(simulator.retraction_speed)} ; BRICK: Urnetract\n"))
-
+        else:
+            # travel without wiping
+            gcodes.append(from_gcode(f"G1 X{target_state.x} Y{target_state.y}{hopping_z} F{int(simulator.travel_speed)} ; BRICK: Target Position\n"))
+            if z is not None:
+                gcodes.append(from_gcode(f"G1 Z{z:.2f} ; BRICK: Target Position\n"))
         return gcodes
 
 
@@ -1555,7 +1559,7 @@ class BrickLayersProcessor:
         # Process the G-code
         #READING ONE LINE AT A TIME FROM A GENERATOR (the input)
         for line_number, line in enumerate(gcode_stream, start=1):
-            bytes_received += len(line.encode("ascii")) 
+            bytes_received += len(line.encode("utf-8")) 
 
 
             #
@@ -1865,9 +1869,8 @@ class BrickLayersProcessor:
             # Exception for pretty visualization on PrusaSlicer and OrcaSlicer preview:
             # Forces a "Width" after an External Perimeter begins, to make them look like they actually ARE.
             if feature.justgotinside_external_perimeter: # SURE: WITHOUT this width, the preview gets very ugly from continuing with wrong widths
-                buffer_lines.append(from_gcode(f"{simulator.const_width}{current_state.width}\n"))
-                pass
-
+                if simulator.const_width is not None:
+                    buffer_lines.append(from_gcode(f"{simulator.const_width}{current_state.width}\n"))
 
             # After every line simulation, keeps a copy as "previous" state:
             previous_state = current_state
@@ -2086,6 +2089,16 @@ Argument names are case-insensitive, so:
 
     error_marker = "❌ Error: " if sys.stderr.encoding.lower() == "utf-8" else "[ERROR] "
 
+
+    def gcode_opener(path, flags):
+        with open(path, "rb") as f:  # Open in binary mode
+            header = f.read(4)  # Read the first 4 bytes
+        if header == b"GCDE":  # Use byte-string for direct comparison
+            print(f"{error_marker}The file '{path}' is a binary G-code file, which is not supported. Disable Binary G-code in your slicer settings.", file=sys.stderr)
+            sys.exit(1)  # Exit immediately
+        return os.open(path, flags)  # Open the file descriptor only if valid
+
+
     # Only process the file if Brick Layers if enabled
     if args_dict["enabled"] > 0:
 
@@ -2221,7 +2234,7 @@ Argument names are case-insensitive, so:
         # print(final_output_file)
 
         # Open the input and output files using Generators:
-        with open(input_file, "r", encoding="utf-8", errors="replace", newline="") as infile, open(final_output_file, "w", encoding="utf-8", newline="\n") as outfile:
+        with open(input_file, 'r', encoding="utf8", newline="", opener=gcode_opener) as infile, open(final_output_file, 'w', encoding="utf-8", newline="\n") as outfile:
             # Pass the file generator (line-by-line) to process_gcode
             gcode_stream = (line for line in infile)  # Efficient generator
 
